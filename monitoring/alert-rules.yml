@@ -1,0 +1,47 @@
+groups:
+  - name: school-platform-alerts
+    rules:
+      - alert: SchoolServiceDown
+        expr: up{job=~"api-gateway|auth-service|user-service|school-service|academic-service|assignment-service|content-service|analytics-service|notification-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Prometheus cannot scrape {{ $labels.job }} for more than 1 minute."
+
+      - alert: SchoolServiceHighLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
+          ) > 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency on {{ $labels.service }}"
+          description: "p95 latency is above the 2 second SLO."
+
+      - alert: SchoolServiceHighErrorRate
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{status_code=~"5.."}[5m])) by (service)
+            /
+            sum(rate(http_request_duration_seconds_count[5m])) by (service)
+          ) > 0.01
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.service }}"
+          description: "5xx error rate is above the 1 percent SLO."
+
+      - alert: AssignmentServiceUnavailable
+        expr: up{job="assignment-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Assignment service is unavailable"
+          description: "Tasks, assignments, monthly plans, teacher dashboard, and messages are impacted."

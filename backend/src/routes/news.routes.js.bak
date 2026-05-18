@@ -1,0 +1,135 @@
+const express = require('express');
+const router = express.Router();
+const { query } = require('../config/db');
+const { authenticate } = require('../middleware/auth');
+const { requireAdmin, requireTeacher } = require('../middleware/rbac');
+const { asyncHandler, paginate, paginatedResponse } = require('../utils/helpers');
+const upload = require('../middleware/upload');
+
+// GET /api/news/latest  (public)
+router.get('/latest', asyncHandler(async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 3, 20);
+  const result = await query("SELECT * FROM news WHERE status = 'approved' ORDER BY date DESC LIMIT $1", [limit]);
+  res.json({ success: true, data: result.rows });
+}));
+
+// GET /api/news/admin/all (admin only - all statuses)
+router.get('/admin/all', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  let result;
+  if (status) {
+    result = await query('SELECT * FROM news WHERE status = $1 ORDER BY date DESC', [status]);
+  } else {
+    result = await query('SELECT * FROM news ORDER BY date DESC');
+  }
+  res.json({ success: true, pagination: { total: result.rowCount, pages: 1, page: 1, limit: result.rowCount }, data: result.rows });
+}));
+
+// GET /api/news  (public)
+router.get('/', asyncHandler(async (req, res) => {
+  const { page = 1, limit = 15, search = '', event_type = '', recommended } = req.query;
+  const { pageNum, limitNum, offset } = paginate(page, limit);
+
+  const params = [];
+  const conditions = [];
+
+  if (search) {
+    params.push(`%${search}%`);
+    conditions.push(`n.title ILIKE $${params.length}`);
+  }
+  if (event_type) {
+    params.push(event_type.toLowerCase());
+    conditions.push(`LOWER(n.event_type) = $${params.length}`);
+  }
+  if (recommended === 'true') {
+    conditions.push(`n.recommended = TRUE`);
+  }
+  conditions.push(`n.status = 'approved'`);
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  params.push(limitNum, offset);
+  const [rows, countRes] = await Promise.all([
+    query(
+      `SELECT * FROM news n ${where} ORDER BY date DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    ),
+    query(`SELECT COUNT(*) FROM news n ${where}`, params.slice(0, params.length - 2))
+  ]);
+  res.json({ success: true, ...paginatedResponse(rows.rows, countRes.rows[0].count, pageNum, limitNum) });
+}));
+
+// GET /api/news/:id  (public)
+router.get('/:id', asyncHandler(async (req, res) => {
+  await query('UPDATE news SET views = views + 1 WHERE id = $1', [req.params.id]);
+  const result = await query('SELECT * FROM news WHERE id = $1', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ success: false, message: 'Жаңалық табылмады' });
+  const news = result.rows[0];
+
+  const related = await query(
+    `SELECT id, title, image_url, date, event_type
+     FROM news WHERE LOWER(event_type) = LOWER($1) AND id <> $2 ORDER BY date DESC LIMIT 3`,
+    [news.event_type || '', req.params.id]
+  );
+  res.json({ success: true, data: { ...news, related: related.rows } });
+}));
+
+// POST /api/news
+router.post('/', authenticate, requireTeacher, upload.single('image'), asyncHandler(async (req, res) => {
+  const { title, description, date, event_type, recommended, status } = req.body;
+  if (!title || !description) {
+    return res.status(400).json({ success: false, message: 'Тақырып және сипаттама міндетті' });
+  }
+  const image_url = req.file ? `resources/${req.file.filename}` : (req.body.image_url || null);
+  
+  // Teachers default to pending, Admins can specify approved or default to approved
+  const finalStatus = req.user.role === 'admin' ? (status || 'approved') : 'pending';
+
+  const result = await query(
+    'INSERT INTO news (title,description,image_url,date,event_type,recommended,status) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+    [title, description, image_url, date || new Date(), event_type || null,
+     recommended === 'true' || recommended === true, finalStatus]
+  );
+  res.status(201).json({ success: true, data: result.rows[0] });
+}));
+
+// PUT /api/news/:id
+router.put('/:id', authenticate, requireTeacher, upload.single('image'), asyncHandler(async (req, res) => {
+  const { title, description, date, event_type, recommended, status } = req.body;
+  const image_url = req.file ? `resources/${req.file.filename}` : (req.body.image_url || null);
+  const rec = recommended !== undefined ? (recommended === 'true' || recommended === true) : null;
+  // If teacher edits, it goes back to pending. If admin, they can change status.
+  const finalStatus = req.user.role === 'admin' ? status : 'pending';
+
+  const result = await query(
+    `UPDATE news SET
+      title = COALESCE($1, title), description = COALESCE($2, description),
+      image_url = COALESCE($3, image_url), date = COALESCE($4, date),
+      event_type = COALESCE($5, event_type), recommended = COALESCE($6, recommended),
+      status = COALESCE($7, status), updated_at = NOW()
+     WHERE id = $8 RETURNING *`,
+    [title, description, image_url, date, event_type, rec, finalStatus, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ success: false, message: 'Жаңалық табылмады' });
+  res.json({ success: true, data: result.rows[0] });
+}));
+
+// PATCH /api/news/:id/status
+router.patch('/:id/status', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  const { status } = req.body;
+  if (!['approved', 'pending', 'rejected'].includes(status)) {
+    return res.status(400).json({ success: false, message: 'Қате статус' });
+  }
+  const result = await query('UPDATE news SET status = $1 WHERE id = $2 RETURNING *', [status, req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ success: false, message: 'Жаңалық табылмады' });
+  res.json({ success: true, data: result.rows[0] });
+}));
+
+// DELETE /api/news/:id
+router.delete('/:id', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  const result = await query('DELETE FROM news WHERE id = $1 RETURNING id', [req.params.id]);
+  if (!result.rows[0]) return res.status(404).json({ success: false, message: 'Жаңалық табылмады' });
+  res.json({ success: true, message: 'Жаңалық жойылды' });
+}));
+
+module.exports = router;

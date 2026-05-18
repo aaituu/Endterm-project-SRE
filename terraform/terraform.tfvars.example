@@ -1,0 +1,16 @@
+project_id = "your-gcp-project-id"
+region     = "europe-west1"
+zone       = "europe-west1-b"
+
+name_prefix       = "school-platform"
+machine_type      = "e2-standard-2"
+boot_disk_size_gb = 50
+
+ssh_user       = "deploy"
+ssh_public_key = "ssh-ed25519 AAAA... your-key"
+
+# Replace with your IP in production, for example ["203.0.113.10/32"].
+ssh_source_ranges = ["0.0.0.0/0"]
+app_source_ranges = ["0.0.0.0/0"]
+
+app_ports = ["80", "443", "8088", "8080", "3000", "9090"]

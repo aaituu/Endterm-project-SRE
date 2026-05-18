@@ -1,0 +1,62 @@
+const express = require('express');
+const router = express.Router();
+const { query } = require('../config/db');
+const { authenticate } = require('../middleware/auth');
+const { requireAdmin, requireTeacher } = require('../middleware/rbac');
+const { asyncHandler, paginate, paginatedResponse } = require('../utils/helpers');
+const upload = require('../middleware/upload');
+
+// GET /api/reports
+router.get('/', authenticate, requireTeacher, asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, search = '', status } = req.query;
+  const { pageNum, limitNum, offset } = paginate(page, limit);
+  const isAdmin = req.user.role === 'admin';
+  const sp = `%${search}%`;
+
+  const params = [sp];
+  let where = 'WHERE (r.title ILIKE $1 OR t.full_name ILIKE $1)';
+  if (!isAdmin && req.user.teacher_id) { params.push(req.user.teacher_id); where += ` AND r.teacher_id = $${params.length}`; }
+  if (status) { params.push(status); where += ` AND r.status = $${params.length}`; }
+
+  params.push(limitNum, offset);
+  const [rows, countRes] = await Promise.all([
+    query(
+      `SELECT r.*, t.full_name AS teacher_name FROM reports r JOIN teachers t ON r.teacher_id = t.id
+       ${where} ORDER BY r.created_at DESC LIMIT $${params.length-1} OFFSET $${params.length}`,
+      params
+    ),
+    query(`SELECT COUNT(*) FROM reports r JOIN teachers t ON r.teacher_id=t.id ${where}`, params.slice(0, params.length - 2))
+  ]);
+  res.json({ success: true, ...paginatedResponse(rows.rows, countRes.rows[0].count, pageNum, limitNum) });
+}));
+
+// POST /api/reports
+router.post('/', authenticate, requireTeacher, upload.single('file'), asyncHandler(async (req, res) => {
+  const { title, description, period } = req.body;
+  const teacher_id = req.user.teacher_id;
+  if (!teacher_id) return res.status(400).json({ success: false, message: 'Мұғалім профилі жоқ' });
+  const file_url = req.file ? `resources/${req.file.filename}` : null;
+  const result = await query(
+    'INSERT INTO reports (teacher_id,title,description,file_url,period) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+    [teacher_id, title, description, file_url, period]
+  );
+  res.status(201).json({ success: true, data: result.rows[0] });
+}));
+
+// PUT /api/reports/:id/status  (admin reviews)
+router.put('/:id/status', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  const { status } = req.body;
+  const result = await query(
+    'UPDATE reports SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *', [status, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ success: false, message: 'Есеп табылмады' });
+  res.json({ success: true, data: result.rows[0] });
+}));
+
+// DELETE /api/reports/:id
+router.delete('/:id', authenticate, requireAdmin, asyncHandler(async (req, res) => {
+  await query('DELETE FROM reports WHERE id = $1', [req.params.id]);
+  res.json({ success: true, message: 'Есеп жойылды' });
+}));
+
+module.exports = router;

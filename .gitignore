@@ -1,0 +1,15 @@
+.env
+**/.env
+node_modules/
+**/node_modules/
+frontend/dist/
+coverage/
+*.log
+.DS_Store
+.history/
+.terraform/
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+*.tfplan

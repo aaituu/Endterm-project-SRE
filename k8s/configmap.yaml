@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: school-config
+  namespace: school-platform
+data:
+  NODE_ENV: "production"
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_NAME: "school_db"
+  DB_USER: "postgres"
+  DB_TENANT_PREFIX: "school_tenant"
+  JWT_EXPIRES_IN: "7d"
+  FRONTEND_URL: "http://localhost:8088"
+  MAX_FILE_SIZE: "10485760"
+  MAX_IMPORT_FILE_SIZE: "20971520"
+  TELEGRAM_BOT_USERNAME: ""
+  TELEGRAM_BOT_POLLING_ENABLED: "false"
+  UPSTREAM_TIMEOUT_MS: "30000"

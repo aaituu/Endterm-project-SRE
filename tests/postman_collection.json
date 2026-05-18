@@ -1,0 +1,89 @@
+{
+  "info": {
+    "name": "School Platform Microservices API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Gateway Health",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    },
+    {
+      "name": "System Status",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/status"
+      }
+    },
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"iin\":\"000000000001\",\"password\":\"Admin123!\"}"
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      }
+    },
+    {
+      "name": "Current User",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/auth/me"
+      }
+    },
+    {
+      "name": "News",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/news"
+      }
+    },
+    {
+      "name": "Academic Classes",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/academic/classes"
+      }
+    },
+    {
+      "name": "Tasks",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/tasks"
+      }
+    }
+  ]
+}

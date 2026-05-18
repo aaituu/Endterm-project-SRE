@@ -1,0 +1,300 @@
+x-backend-env: &backend-env
+  NODE_ENV: production
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_NAME: ${DB_NAME}
+  DB_USER: ${DB_USER}
+  DB_PASSWORD: ${DB_PASSWORD}
+  JWT_SECRET: ${JWT_SECRET}
+  JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+  FRONTEND_URL: ${FRONTEND_URL}
+  MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
+  MAX_IMPORT_FILE_SIZE: ${MAX_IMPORT_FILE_SIZE}
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+  TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME}
+  TELEGRAM_BOT_POLLING_ENABLED: ${TELEGRAM_BOT_POLLING_ENABLED}
+  DB_TENANT_PREFIX: ${DB_TENANT_PREFIX:-school_tenant}
+  BACKEND_SRC_PATH: /app/backend/src
+
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 10
+  start_period: 20s
+
+services:
+  frontend-service:
+    image: school-frontend-service:local
+    ports:
+      - target: 80
+        published: ${FRONTEND_PORT}
+        protocol: tcp
+        mode: ingress
+    networks: [school-public, school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null || exit 1"]
+      <<: *healthcheck
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  api-gateway:
+    image: school-api-gateway:local
+    ports:
+      - target: 8080
+        published: ${API_GATEWAY_PORT:-8080}
+        protocol: tcp
+        mode: ingress
+    environment:
+      SERVICE_NAME: api-gateway
+      PORT: 8080
+      AUTH_SERVICE_URL: http://auth-service:3001
+      USER_SERVICE_URL: http://user-service:3002
+      SCHOOL_SERVICE_URL: http://school-service:3003
+      ACADEMIC_SERVICE_URL: http://academic-service:3004
+      ASSIGNMENT_SERVICE_URL: http://assignment-service:3005
+      CONTENT_SERVICE_URL: http://content-service:3006
+      ANALYTICS_SERVICE_URL: http://analytics-service:3007
+      NOTIFICATION_SERVICE_URL: http://notification-service:3008
+      UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:-30000}
+    networks: [school-public, school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      <<: *healthcheck
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  auth-service:
+    image: school-auth-service:local
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: auth-service
+      PORT: 3001
+    networks: [school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      <<: *healthcheck
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  user-service:
+    image: school-user-service:local
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: user-service
+      PORT: 3002
+    networks: [school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      <<: *healthcheck
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  school-service:
+    image: school-school-service:local
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: school-service
+      PORT: 3003
+    networks: [school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      <<: *healthcheck
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  academic-service:
+    image: school-academic-service:local
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: academic-service
+      PORT: 3004
+    networks: [school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3004/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      <<: *healthcheck
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  assignment-service:
+    image: school-assignment-service:local
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: assignment-service
+      PORT: 3005
+    networks: [school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3005/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      <<: *healthcheck
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  content-service:
+    image: school-content-service:local
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: content-service
+      PORT: 3006
+    networks: [school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3006/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      <<: *healthcheck
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  analytics-service:
+    image: school-analytics-service:local
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: analytics-service
+      PORT: 3007
+    networks: [school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3007/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      <<: *healthcheck
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  notification-service:
+    image: school-notification-service:local
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: notification-service
+      PORT: 3008
+    networks: [school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3008/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      <<: *healthcheck
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-school_db}
+    ports:
+      - target: 5432
+        published: ${POSTGRES_PORT:-55432}
+        protocol: tcp
+        mode: ingress
+    volumes:
+      - school_postgres_data:/var/lib/postgresql/data
+      - ./db/init/01-run-schema.sql:/docker-entrypoint-initdb.d/01-run-schema.sql:ro
+      - ./db/init/02-admin-password.sql:/docker-entrypoint-initdb.d/02-admin-password.sql:ro
+      - ./backend/src/config:/docker-entrypoint-initdb.d/schema:ro
+    networks: [school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-school_db}"]
+      <<: *healthcheck
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  db-migrate:
+    image: school-db-migrate:local
+    environment:
+      <<: *backend-env
+      SERVICE_NAME: db-migrate
+    networks: [school-backend]
+    deploy:
+      mode: replicated-job
+      replicas: 1
+      restart_policy:
+        condition: none
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports:
+      - target: 9090
+        published: ${PROMETHEUS_PORT:-9090}
+        protocol: tcp
+        mode: ingress
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    networks: [school-public, school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9090/-/healthy >/dev/null || exit 1"]
+      <<: *healthcheck
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    ports:
+      - target: 3000
+        published: ${GRAFANA_PORT:-3000}
+        protocol: tcp
+        mode: ingress
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks: [school-public, school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      <<: *healthcheck
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    ports:
+      - target: 9100
+        published: ${NODE_EXPORTER_PORT:-9100}
+        protocol: tcp
+        mode: ingress
+    networks: [school-backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9100/metrics >/dev/null || exit 1"]
+      <<: *healthcheck
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+networks:
+  school-public:
+    driver: overlay
+  school-backend:
+    driver: overlay
+
+volumes:
+  school_postgres_data:
+  prometheus_data:
+  grafana_data:

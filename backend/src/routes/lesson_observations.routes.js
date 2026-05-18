@@ -1,0 +1,139 @@
+const express = require('express');
+const router = express.Router();
+const db = require('../config/db');
+const { authenticate } = require('../middleware/auth');
+const upload = require('../middleware/upload');
+
+// 1. GET ALL
+router.get('/', authenticate, async (req, res) => {
+  try {
+    const { teacher_id, subject, class_name, date_from, date_to } = req.query;
+    let query = `
+      SELECT lo.*, 
+             u1.full_name as teacher_name, 
+             u2.full_name as filled_by_name
+      FROM lesson_observations lo
+      JOIN users u1 ON lo.teacher_id = u1.id
+      LEFT JOIN users u2 ON lo.filled_by_id = u2.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (teacher_id) {
+      params.push(teacher_id);
+      query += ` AND lo.teacher_id = $${params.length}`;
+    }
+    if (subject) {
+      params.push(`%${subject}%`);
+      query += ` AND lo.subject ILIKE $${params.length}`;
+    }
+    if (class_name) {
+      params.push(class_name);
+      query += ` AND lo.class_name = $${params.length}`;
+    }
+    if (date_from) {
+      params.push(date_from);
+      query += ` AND lo.observation_date >= $${params.length}`;
+    }
+    if (date_to) {
+      params.push(date_to);
+      query += ` AND lo.observation_date <= $${params.length}`;
+    }
+
+    query += ` ORDER BY lo.observation_date DESC, lo.id DESC`;
+
+    const result = await db.query(query, params);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('Error fetching lesson observations:', error);
+    res.status(500).json({ success: false, message: 'Қате орын алды' });
+  }
+});
+
+// 2. GET BY ID
+router.get('/:id', authenticate, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT lo.*, 
+             u1.full_name as teacher_name, 
+             u2.full_name as filled_by_name
+      FROM lesson_observations lo
+      JOIN users u1 ON lo.teacher_id = u1.id
+      LEFT JOIN users u2 ON lo.filled_by_id = u2.id
+      WHERE lo.id = $1
+    `, [req.params.id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Табылмады' });
+    }
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Error fetching lesson observation:', error);
+    res.status(500).json({ success: false, message: 'Қате орын алды' });
+  }
+});
+
+// 3. CREATE
+router.post('/', authenticate, upload.single('photo'), async (req, res) => {
+  try {
+    const {
+      observation_date, teacher_id, subject, class_name, students_total, students_attended,
+      topic, lesson_type, evaluation, kmj_standard, organization, homework,
+      teacher_student_relation, new_lesson_explanation, topic_reveal, teaching_methods,
+      task_delivery, feedback, conclusion
+    } = req.body;
+
+    // Validate that date is not in the past
+    const selectedDate = new Date(observation_date);
+    selectedDate.setHours(0,0,0,0);
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    
+    // Check if the user is a normal teacher trying to backdate
+    // req.user has role. We can just enforce it globally for simplicity or check if admin.
+    if (req.user.role === 'teacher' && selectedDate < today) {
+      return res.status(400).json({ success: false, message: 'Өткен күнді таңдау мүмкін емес' });
+    }
+
+    const photoUrl = req.file ? req.file.path : null;
+    const filledById = req.user.id;
+
+    const result = await db.query(
+      `INSERT INTO lesson_observations (
+        observation_date, teacher_id, subject, class_name, students_total, students_attended,
+        topic, lesson_type, evaluation, kmj_standard, organization, homework,
+        teacher_student_relation, new_lesson_explanation, topic_reveal, teaching_methods,
+        task_delivery, feedback, conclusion, photo_url, filled_by_id
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+      ) RETURNING *`,
+      [
+        observation_date, teacher_id, subject, class_name, students_total, students_attended,
+        topic, lesson_type, evaluation, kmj_standard, organization, homework,
+        teacher_student_relation, new_lesson_explanation, topic_reveal, teaching_methods,
+        task_delivery, feedback, conclusion, photoUrl, filledById
+      ]
+    );
+
+    res.json({ success: true, data: result.rows[0], message: 'Сабаққа ену құжаты қосылды' });
+  } catch (error) {
+    console.error('Error creating lesson observation:', error);
+    res.status(500).json({ success: false, message: 'Құру барысында қате орын алды' });
+  }
+});
+
+// 4. DELETE
+router.delete('/:id', authenticate, async (req, res) => {
+  try {
+    const result = await db.query('DELETE FROM lesson_observations WHERE id = $1 RETURNING id', [req.params.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Табылмады' });
+    }
+    res.json({ success: true, message: 'Жойылды' });
+  } catch (error) {
+    console.error('Error deleting lesson observation:', error);
+    res.status(500).json({ success: false, message: 'Қате орын алды' });
+  }
+});
+
+module.exports = router;

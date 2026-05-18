@@ -1,0 +1,107 @@
+---
+- name: Deploy school platform with Docker Compose
+  hosts: school_servers
+  become: true
+  vars:
+    app_dir: /opt/school-platform
+    local_project_dir: "{{ playbook_dir }}/.."
+    db_password: "{{ lookup('env', 'DB_PASSWORD') }}"
+    jwt_secret: "{{ lookup('env', 'JWT_SECRET') }}"
+    telegram_bot_token: "{{ lookup('env', 'TELEGRAM_BOT_TOKEN') }}"
+    telegram_bot_username: "{{ lookup('env', 'TELEGRAM_BOT_USERNAME') }}"
+    grafana_admin_user: "{{ lookup('env', 'GRAFANA_ADMIN_USER') }}"
+    grafana_admin_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') }}"
+
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - rsync
+        state: present
+        update_cache: true
+
+    - name: Create Docker keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download Docker apt key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Add Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        filename: docker
+
+    - name: Install Docker
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Enable Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create app directory
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Copy project files to server
+      ansible.posix.synchronize:
+        src: "{{ local_project_dir }}/"
+        dest: "{{ app_dir }}/"
+        delete: true
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=.env"
+          - "--exclude=**/node_modules"
+          - "--exclude=frontend/dist"
+          - "--exclude=terraform/.terraform"
+          - "--exclude=terraform/terraform.tfvars"
+          - "--exclude=terraform/*.tfstate"
+          - "--exclude=terraform/*.tfstate.*"
+
+    - name: Render production .env
+      ansible.builtin.template:
+        src: templates/env.j2
+        dest: "{{ app_dir }}/.env"
+        mode: "0600"
+
+    - name: Build and start stack
+      ansible.builtin.command: docker compose -f docker-compose.yml up -d --build --remove-orphans
+      args:
+        chdir: "{{ app_dir }}"
+
+    - name: Run database migrations explicitly
+      ansible.builtin.command: docker compose -f docker-compose.yml run --rm db-migrate
+      args:
+        chdir: "{{ app_dir }}"
+
+    - name: Check frontend health
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8088/health
+        status_code: 200
+
+    - name: Check gateway status
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/api/status
+        status_code: 200
